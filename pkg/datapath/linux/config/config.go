@@ -483,10 +483,6 @@ func (h *HeaderfileWriter) WriteEndpointConfig(w io.Writer, e endpoint.Config) e
 }
 
 func (h *HeaderfileWriter) writeTemplateConfig(fw *bufio.Writer, e endpoint.Config) error {
-	if e.RequireRouting() {
-		fmt.Fprintf(fw, "#define ENABLE_ROUTING 1\n")
-	}
-
 	if e.IsHost() {
 		// Only used to differentiate between host endpoint template and other templates.
 		fmt.Fprintf(fw, "#define HOST_ENDPOINT 1\n")

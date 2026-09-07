@@ -15,7 +15,6 @@
 #define ENABLE_IPV4		1
 #define ENABLE_NODEPORT		1
 #define ENABLE_MASQUERADE_IPV4	1
-#define ENABLE_ROUTING		1
 
 #define PRIMARY_IFACE 1
 #define SECONDARY_IFACE 2
@@ -57,6 +56,7 @@ mock_redirect_neigh(int ifindex,
 #include "lib/ipcache.h"
 
 ASSIGN_CONFIG(__u32, interface_ifindex, PRIMARY_IFACE)
+ASSIGN_CONFIG(bool, enable_endpoint_routes, false)
 
 /* Setup for this test:
  *
