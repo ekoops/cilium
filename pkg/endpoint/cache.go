@@ -36,7 +36,6 @@ type epInfoCache struct {
 	ipv6                   netip.Addr
 	requireARPPassthrough  bool
 	requireEgressProg      bool
-	requireRouting         bool
 	requireEndpointRoute   bool
 	atHostNS               bool
 	policyVerdictLogFilter uint32
@@ -91,7 +90,6 @@ func (e *Endpoint) createEpInfoCache(epdir string) *epInfoCache {
 		ipv6:                   e.IPv6Address(),
 		requireARPPassthrough:  e.RequireARPPassthrough(),
 		requireEgressProg:      e.RequireEgressProg(),
-		requireRouting:         e.RequireRouting(),
 		requireEndpointRoute:   e.RequireEndpointRoute(),
 		policyVerdictLogFilter: e.GetPolicyVerdictLogFilter(),
 		options:                e.Options.DeepCopy(),
@@ -184,12 +182,6 @@ func (ep *epInfoCache) RequireARPPassthrough() bool {
 // "to-container" to be attached at egress on the host facing veth pair
 func (ep *epInfoCache) RequireEgressProg() bool {
 	return ep.requireEgressProg
-}
-
-// RequireRouting returns true if the endpoint requires BPF routing to be
-// enabled, when disabled, routing is delegated to Linux routing
-func (ep *epInfoCache) RequireRouting() bool {
-	return ep.requireRouting
 }
 
 // RequireEndpointRoute returns if the endpoint wants a per endpoint route

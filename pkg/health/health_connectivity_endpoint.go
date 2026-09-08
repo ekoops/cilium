@@ -275,11 +275,9 @@ func (h *ciliumHealthManager) launchAsEndpoint(baseCtx context.Context, endpoint
 	}
 
 	if option.Config.EnableEndpointRoutes {
-		disabled := false
 		dpConfig := &models.EndpointDatapathConfiguration{
 			InstallEndpointRoute: true,
 			RequireEgressProg:    true,
-			RequireRouting:       &disabled,
 		}
 		info.DatapathConfiguration = dpConfig
 	}

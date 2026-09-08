@@ -111,11 +111,6 @@ func (m *endpointAPIManager) CreateEndpoint(ctx context.Context, epTemplate *mod
 		// program is needed on that device at egress as BPF program on
 		// cilium_host interface is bypassed
 		epTemplate.DatapathConfiguration.RequireEgressProg = true
-
-		// Delegate routing to the Linux stack rather than tail-calling
-		// between BPF programs.
-		disabled := false
-		epTemplate.DatapathConfiguration.RequireRouting = &disabled
 	}
 
 	m.logger.Info("Create endpoint request",
