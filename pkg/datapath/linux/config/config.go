@@ -196,10 +196,6 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *config.Config) erro
 		cDefinesMap["ENABLE_SCTP"] = "1"
 	}
 
-	if option.Config.ServiceNoBackendResponse == option.ServiceNoBackendResponseReject {
-		cDefinesMap["SERVICE_NO_BACKEND_RESPONSE"] = "1"
-	}
-
 	// --- WARNING: THIS CONFIGURATION METHOD IS DEPRECATED, SEE FUNCTION DOC ---
 
 	if option.Config.EnableEnvoyConfig {
@@ -214,9 +210,6 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *config.Config) erro
 		}
 		if option.Config.UnsafeDaemonConfigOption.EnableSocketLBPeer {
 			cDefinesMap["ENABLE_SOCKET_LB_PEER"] = "1"
-		}
-		if option.Config.UnsafeDaemonConfigOption.EnableSocketLBTracing {
-			cDefinesMap["TRACE_SOCK_NOTIFY"] = "1"
 		}
 	}
 
@@ -468,11 +461,6 @@ func (h *HeaderfileWriter) WriteEndpointConfig(w io.Writer, e endpoint.Config) e
 func (h *HeaderfileWriter) writeTemplateConfig(fw *bufio.Writer, e endpoint.Config) error {
 	if e.RequireRouting() {
 		fmt.Fprintf(fw, "#define ENABLE_ROUTING 1\n")
-	}
-
-	if e.IsHost() {
-		// Only used to differentiate between host endpoint template and other templates.
-		fmt.Fprintf(fw, "#define HOST_ENDPOINT 1\n")
 	}
 
 	// Local delivery metrics should always be set for endpoint programs.
