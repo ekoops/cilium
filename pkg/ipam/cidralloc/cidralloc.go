@@ -5,10 +5,13 @@ package cidralloc
 
 import (
 	"fmt"
+	"math/big"
 	"net/netip"
 
 	"go4.org/netipx"
 )
+
+type RangesToReserve *big.Int
 
 type CIDRAllocator interface {
 	fmt.Stringer
@@ -21,5 +24,6 @@ type CIDRAllocator interface {
 	InRange(prefix netip.Prefix) bool
 	IsClusterCIDR(prefix netip.Prefix) bool
 	Prefix() netip.Prefix
-	SetReservedRanges(ranges []netipx.IPRange) error
+	ComputeRangesToReserve(ranges []netipx.IPRange) (RangesToReserve, error)
+	SetReservedRanges(rangesToReserve RangesToReserve)
 }

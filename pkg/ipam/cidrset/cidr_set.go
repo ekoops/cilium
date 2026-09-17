@@ -95,6 +95,56 @@ func NewCIDRSet(clusterPrefix netip.Prefix, subNetMaskSize int) (*CidrSet, error
 	}, nil
 }
 
+type ErrCIDRCollision struct {
+	cidr      string
+	allocator cidralloc.CIDRAllocator
+}
+
+func (e ErrCIDRCollision) Error() string {
+	return fmt.Sprintf("requested CIDR %s collides with %s", e.cidr, e.allocator)
+}
+
+func (e *ErrCIDRCollision) Is(target error) bool {
+	t, ok := target.(*ErrCIDRCollision)
+	if !ok {
+		return false
+	}
+	return t.cidr == e.cidr
+}
+
+func NewCIDRSets(isV6 bool, strCIDRs []string, maskSize int) ([]cidralloc.CIDRAllocator, error) {
+	cidrAllocators := make([]cidralloc.CIDRAllocator, 0, len(strCIDRs))
+	for _, strCIDR := range strCIDRs {
+		prefix, err := netip.ParsePrefix(strCIDR)
+		if err != nil {
+			return nil, err
+		}
+		// Check if CIDRs collide with each other.
+		for _, cidrAllocator := range cidrAllocators {
+			if cidrAllocator.InRange(prefix) {
+				return nil, &ErrCIDRCollision{
+					cidr:      strCIDR,
+					allocator: cidrAllocator,
+				}
+			}
+		}
+
+		addr := prefix.Addr()
+		switch {
+		case isV6 && addr.Is4():
+			return nil, fmt.Errorf("CIDR is not v6 family: %s", prefix)
+		case !isV6 && !addr.Is4():
+			return nil, fmt.Errorf("CIDR is not v4 family: %s", prefix)
+		}
+		cidrSet, err := NewCIDRSet(prefix, maskSize)
+		if err != nil {
+			return nil, err
+		}
+		cidrAllocators = append(cidrAllocators, cidrSet)
+	}
+	return cidrAllocators, nil
+}
+
 func (s *CidrSet) String() string {
 	return fmt.Sprintf("clusterCIDR: %s, nodeMask: %d", s.clusterPrefix, s.nodeMaskSize)
 }
@@ -315,33 +365,34 @@ func countUnavailableCIDRs(used, reserved *big.Int) int {
 	return count
 }
 
-// SetReservedRanges replaces the ranges excluded from new allocations.
-func (s *CidrSet) SetReservedRanges(ranges []netipx.IPRange) error {
-	var reservedBitmap big.Int
+func (s *CidrSet) ComputeRangesToReserve(ranges []netipx.IPRange) (cidralloc.RangesToReserve, error) {
+	toReserveBitmap := big.NewInt(0)
 
 	for _, r := range ranges {
 		begin, err := s.getIndexForAddr(r.From())
 		if err != nil {
-			return err
+			return big.NewInt(0), err
 		}
 
 		end, err := s.getIndexForAddr(r.To())
 		if err != nil {
-			return err
+			return big.NewInt(0), err
 		}
 
 		for i := begin; i <= end; i++ {
-			reservedBitmap.SetBit(&reservedBitmap, i, 1)
+			toReserveBitmap.SetBit(toReserveBitmap, i, 1)
 		}
 	}
+	return toReserveBitmap, nil
+}
 
+// SetReservedRanges replaces the ranges excluded from new allocations.
+func (s *CidrSet) SetReservedRanges(rangesToReserve cidralloc.RangesToReserve) {
 	s.Lock()
 	defer s.Unlock()
-
-	s.unavailableCIDRs = countUnavailableCIDRs(&s.used, &reservedBitmap)
-	s.reserved.Set(&reservedBitmap)
-
-	return nil
+	toReserveBitmap := (*big.Int)(rangesToReserve)
+	s.unavailableCIDRs = countUnavailableCIDRs(&s.used, toReserveBitmap)
+	s.reserved.Set(toReserveBitmap)
 }
 
 type ErrCIDRCollision struct {

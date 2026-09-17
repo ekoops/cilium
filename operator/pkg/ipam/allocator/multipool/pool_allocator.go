@@ -217,7 +217,9 @@ func (p *PoolAllocator) reconcileOrphanCIDRs(pool string, v4, v6 []cidralloc.CID
 	return errors.Join(errs...)
 }
 
-func (p *PoolAllocator) updateCIDRSets(isV6 bool, cidrSets []cidralloc.CIDRAllocator, newCIDRs []netip.Prefix, maskSize int) ([]cidralloc.CIDRAllocator, error) {
+func (p *PoolAllocator) evaluateCIDRSets(isV6 bool, prevCIDRSets []cidralloc.CIDRAllocator, newCIDRs []netip.Prefix, maskSize int) ([]cidralloc.CIDRAllocator, func(), error) {
+	cidrSets := slices.Clone(prevCIDRSets)
+
 	var newCIDRSets []cidralloc.CIDRAllocator
 	var alloc []string
 
@@ -231,11 +233,13 @@ func (p *PoolAllocator) updateCIDRSets(isV6 bool, cidrSets []cidralloc.CIDRAlloc
 		var err error
 		newCIDRSets, err = cidrset.NewCIDRSets(isV6, alloc, maskSize)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	var errs []error
+
+	var nodePoolChangeEnforcingFns []func()
 
 	// delete CIDR set for CIDRs not present in the new CIDRs
 	for i, oldCIDR := range cidrSets {
@@ -275,15 +279,24 @@ func (p *PoolAllocator) updateCIDRSets(isV6 bool, cidrSets []cidralloc.CIDRAlloc
 						logfields.PoolName, pool,
 						logfields.Node, node,
 					)
-					p.markOrphan(node, pool, cidr, allocatedCIDRSets.allowFirstIP, allocatedCIDRSets.allowLastIP)
-					delete(cidrs, cidr)
+					nodePoolChangeEnforcingFns = append(nodePoolChangeEnforcingFns, func() {
+						p.markOrphan(node, pool, cidr, allocatedCIDRSets.allowFirstIP, allocatedCIDRSets.allowLastIP)
+						delete(cidrs, cidr)
+					})
 				}
 			}
 		}
 	}
+
+	enforceNodePoolChanges := func() {
+		for _, nodePoolChangeEnforcingFns := range nodePoolChangeEnforcingFns {
+			nodePoolChangeEnforcingFns()
+		}
+	}
+
 	cidrSets = slices.DeleteFunc(cidrSets, func(a cidralloc.CIDRAllocator) bool { return a == nil })
 	cidrSets = append(cidrSets, newCIDRSets...)
-	return cidrSets, errors.Join(errs...)
+	return cidrSets, enforceNodePoolChanges, errors.Join(errs...)
 }
 
 func cidrPrefixes(cidrs []poolCIDRConfig) []netip.Prefix {
@@ -297,21 +310,24 @@ func cidrPrefixes(cidrs []poolCIDRConfig) []netip.Prefix {
 	return prefixes
 }
 
-func setReservedRanges(allocators []cidralloc.CIDRAllocator, cidrs []poolCIDRConfig) error {
+func computeRangesToReserve(allocators []cidralloc.CIDRAllocator, cidrs []poolCIDRConfig) ([]cidralloc.RangesToReserve, error) {
 	reservedRanges := make(map[netip.Prefix][]netipx.IPRange, len(cidrs))
 	for i := range cidrs {
 		cidrConfig := &cidrs[i]
 		reservedRanges[cidrConfig.cidr] = cidrConfig.reservedRanges
 	}
 
+	allocatorsRangesToReserve := make([]cidralloc.RangesToReserve, 0, len(reservedRanges))
 	for i := range allocators {
 		prefix := allocators[i].Prefix()
-		if err := allocators[i].SetReservedRanges(reservedRanges[prefix]); err != nil {
-			return fmt.Errorf("failed to set reserved ranges for CIDR %s: %w", prefix, err)
+		rangesToReserve, err := allocators[i].ComputeRangesToReserve(reservedRanges[prefix])
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute ranges to reserve for CIDR %s: %w", prefix, err)
 		}
+		allocatorsRangesToReserve = append(allocatorsRangesToReserve, rangesToReserve)
 	}
 
-	return nil
+	return allocatorsRangesToReserve, nil
 }
 
 func (p *PoolAllocator) UpsertPool(poolName string, ipv4CIDRs []poolCIDRConfig, ipv4MaskSize int, ipv6CIDRs []poolCIDRConfig, ipv6MaskSize int, opts ...PoolOption) error {
@@ -344,7 +360,7 @@ func (p *PoolAllocator) UpsertPool(poolName string, ipv4CIDRs []poolCIDRConfig, 
 	if exists {
 		v4Prev = pool.v4
 	}
-	v4, err := p.updateCIDRSets(false, v4Prev, ipv4Prefixes, ipv4MaskSize)
+	v4, commitV4Changes, err := p.evaluateCIDRSets(false, v4Prev, ipv4Prefixes, ipv4MaskSize)
 	if err != nil {
 		return err
 	}
@@ -353,16 +369,27 @@ func (p *PoolAllocator) UpsertPool(poolName string, ipv4CIDRs []poolCIDRConfig, 
 	if exists {
 		v6Prev = pool.v6
 	}
-	v6, err := p.updateCIDRSets(true, v6Prev, ipv6Prefixes, ipv6MaskSize)
+	v6, commitV6Changes, err := p.evaluateCIDRSets(true, v6Prev, ipv6Prefixes, ipv6MaskSize)
 	if err != nil {
 		return err
 	}
 
-	if err := setReservedRanges(v4, ipv4CIDRs); err != nil {
+	v4RangesToReserve, err := computeRangesToReserve(v4, ipv4CIDRs)
+	if err != nil {
 		return err
 	}
-	if err := setReservedRanges(v6, ipv6CIDRs); err != nil {
+	v6RangesToReserve, err := computeRangesToReserve(v6, ipv6CIDRs)
+	if err != nil {
 		return err
+	}
+
+	commitV4Changes()
+	commitV6Changes()
+	for i, rangesToReserve := range v4RangesToReserve {
+		v4[i].SetReservedRanges(rangesToReserve)
+	}
+	for i, rangesToReserve := range v6RangesToReserve {
+		v6[i].SetReservedRanges(rangesToReserve)
 	}
 
 	p.pools[poolName] = cidrPool{
