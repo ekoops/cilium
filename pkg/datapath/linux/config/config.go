@@ -186,10 +186,6 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *config.Config) erro
 
 	// --- WARNING: THIS CONFIGURATION METHOD IS DEPRECATED, SEE FUNCTION DOC ---
 
-	if option.Config.EnableEnvoyConfig {
-		cDefinesMap["ENABLE_L7_LB"] = "1"
-	}
-
 	if h.kprCfg.EnableSocketLB {
 		if option.Config.UnsafeDaemonConfigOption.BPFSocketLBHostnsOnly {
 			cDefinesMap["ENABLE_SOCKET_LB_HOST_ONLY"] = "1"

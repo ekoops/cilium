@@ -43,6 +43,8 @@ type Node struct {
 	EnableIdentityMark bool `config:"enable_identity_mark"`
 	// Use jiffies (count of timer ticks since boot).
 	EnableJiffies bool `config:"enable_jiffies"`
+	// Enable L7 load-balancing support.
+	EnableL7LB bool `config:"enable_l7_lb"`
 	// Enable dynamic source IP resolution for SNAT via linux's routing table.
 	EnableNodeportSourceLookup bool `config:"enable_nodeport_source_lookup"`
 	// Enable SCTP support.

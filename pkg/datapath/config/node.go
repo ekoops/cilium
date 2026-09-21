@@ -170,5 +170,7 @@ func NodeConfig(lnc *Config) Node {
 
 	node.EnableSCTP = option.Config.EnableSCTP
 
+	node.EnableL7LB = option.Config.EnableEnvoyConfig
+
 	return node
 }
